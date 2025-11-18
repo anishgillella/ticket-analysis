@@ -571,20 +571,45 @@ frontend/
 - Prompt version tracking & A/B testing
 - Token/cost analytics per ticket type
 
-**3. Scaling for Large Datasets**
-- **Multi-table support**: Query builder for 100+ tables
-- **Text-to-SQL Agent**: Natural language → SQL conversion (Query GPT)
-- **Bug Analysis Pipeline**: Single NL query analyzes bugs across entire database
-- **Indexing strategy**: Partitioning for 100K+ rows
-- **Connection pooling**: PgBouncer for concurrent requests
+**3. Inference Engine Optimization**
+- **Local Inference**: Deploy open-source models (GPT-4O Mini equivalent) via Ollama or vLLM
+- **Benefits**: Reduced latency, no API calls, cost savings at scale
+- **Scalability**: For hundreds of thousands of rows:
+  - Use **GPT-5 Mini or GPT-5** for Text-to-SQL intelligence
+  - Switch to high-performance inference engines: **Cerebras**, **Together AI**, or **Replicate**
+  - Leverage batch inference for multi-ticket analysis
+- **Implementation**:
+  - Abstract LLM provider layer (currently OpenRouter → support local/Cerebras)
+  - Latency monitoring & automatic fallback to faster inference engines
+  - Model selection based on query complexity and dataset size
 
-**4. Additional Features**
+**4. RAG Pipeline for Deep Analysis**
+- **Advocates Deep-Dive**: Admin interface to explore patterns across hundreds of thousands of tickets
+- **Vector Store Integration**:
+  - Store ticket embeddings in **Pinecone**, **Weaviate**, or **Milvus**
+  - Full-text search + semantic similarity search
+- **Additive Indexing**:
+  - Every new ticket is auto-indexed and added to vector store immediately
+  - Periodic full re-index (weekly or bi-weekly) for accuracy
+  - Incremental updates to avoid re-embedding entire database
+- **Use Cases**:
+  - "Find all tickets similar to this issue"
+  - "Show me patterns across advocate accounts"
+  - "Identify recurring problems in specific categories"
+  - "Semantic search across all ticket descriptions and analyses"
+- **Implementation**:
+  - Background job for ticket embedding (async with Celery/Bull)
+  - Separate indexing service for vector operations
+  - Admin dashboard showing embedding quality & search metrics
+
+**5. Additional Features**
 - Full test suite (unit, integration, E2E)
 - Authentication & role-based access
-- Real-time WebSocket updates
-- CSV batch upload
-- PDF report export
-- Email notifications
+- Real-time WebSocket updates for live analysis progress
+- CSV batch upload with progress tracking
+- PDF report generation with charts and analysis summaries
+- Email notifications for high-priority tickets
+- Webhook integrations for ticket sync from external systems
 
 ---
 
