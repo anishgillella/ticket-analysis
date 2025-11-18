@@ -4,6 +4,12 @@ import { TicketIcon, ClockIcon, CheckCircleIcon, TrendingUpIcon } from 'lucide-r
 import TicketList from '../components/TicketList';
 import { api, Ticket, AnalysisRun, TicketAnalysis } from '../services/api';
 
+interface SessionAnalysis {
+  analysis_run: AnalysisRun;
+  ticket_analyses: TicketAnalysis[];
+  sessionRunNumber: number;
+}
+
 const Dashboard = () => {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [analysisRuns, setAnalysisRuns] = useState<AnalysisRun[]>([]);
@@ -12,8 +18,90 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const updateChartsFromSession = () => {
+    const stored = localStorage.getItem('sessionAnalyses');
+    if (stored) {
+      try {
+        const sessionAnalyses: SessionAnalysis[] = JSON.parse(stored);
+        
+        if (sessionAnalyses.length > 0) {
+          // Calculate category distribution from ALL session analyses (cumulative)
+          const categoryCounts: Record<string, number> = {};
+          sessionAnalyses.forEach((sessionAnalysis) => {
+            sessionAnalysis.ticket_analyses.forEach((analysis: TicketAnalysis) => {
+              const cat = analysis.category.replace('_', ' ');
+              categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+            });
+          });
+          
+          const categoryColors: Record<string, string> = {
+            bug: '#EF4444',
+            'feature request': '#3B82F6',
+            billing: '#8B5CF6',
+            question: '#F59E0B',
+            support: '#10B981',
+            other: '#6B7280'
+          };
+          
+          setCategoryData(
+            Object.entries(categoryCounts)
+              .map(([name, count]) => ({ 
+                name, 
+                count,
+                color: categoryColors[name.toLowerCase()] || '#6B7280'
+              }))
+              .sort((a, b) => b.count - a.count)
+          );
+
+          // Calculate priority distribution from ALL session analyses (cumulative)
+          const priorityCounts: Record<string, number> = {};
+          sessionAnalyses.forEach((sessionAnalysis) => {
+            sessionAnalysis.ticket_analyses.forEach((analysis: TicketAnalysis) => {
+              priorityCounts[analysis.priority] = (priorityCounts[analysis.priority] || 0) + 1;
+            });
+          });
+          
+          const priorityOrder = { high: 3, medium: 2, low: 1 };
+          const priorityColors: Record<string, string> = {
+            high: '#EF4444',
+            medium: '#F59E0B',
+            low: '#10B981'
+          };
+          
+          setPriorityData(
+            Object.entries(priorityCounts)
+              .map(([name, count]) => ({ 
+                name: name.charAt(0).toUpperCase() + name.slice(1), 
+                count,
+                color: priorityColors[name.toLowerCase()] || '#6B7280'
+              }))
+              .sort((a, b) => {
+                return (priorityOrder[b.name.toLowerCase() as keyof typeof priorityOrder] || 0) - 
+                       (priorityOrder[a.name.toLowerCase() as keyof typeof priorityOrder] || 0);
+              })
+          );
+        } else {
+          setCategoryData([]);
+          setPriorityData([]);
+        }
+      } catch (e) {
+        console.error('Failed to parse stored session analyses:', e);
+      }
+    } else {
+      setCategoryData([]);
+      setPriorityData([]);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    // Check for session analyses on mount and periodically
+    updateChartsFromSession();
+    const interval = setInterval(updateChartsFromSession, 1000);
+    
+    return () => {
+      clearInterval(interval);
+    };
   }, []);
 
   const loadData = async () => {
@@ -26,44 +114,8 @@ const Dashboard = () => {
       setTickets(ticketsData);
       setAnalysisRuns(historyData.analysis_runs);
       
-      // Load latest analysis for category/priority charts
-      try {
-        const latestAnalysis = await api.getLatestAnalysis();
-        
-        // Calculate category distribution from latest analysis
-        const categoryCounts: Record<string, number> = {};
-        latestAnalysis.ticket_analyses.forEach((analysis: TicketAnalysis) => {
-          const cat = analysis.category.replace('_', ' ');
-          categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
-        });
-        setCategoryData(
-          Object.entries(categoryCounts)
-            .map(([name, count]) => ({ name, count }))
-            .sort((a, b) => b.count - a.count)
-        );
-
-        // Calculate priority distribution from latest analysis
-        const priorityCounts: Record<string, number> = {};
-        latestAnalysis.ticket_analyses.forEach((analysis: TicketAnalysis) => {
-          priorityCounts[analysis.priority] = (priorityCounts[analysis.priority] || 0) + 1;
-        });
-        const priorityOrder = { high: 3, medium: 2, low: 1 };
-        setPriorityData(
-          Object.entries(priorityCounts)
-            .map(([name, count]) => ({ 
-              name: name.charAt(0).toUpperCase() + name.slice(1), 
-              count 
-            }))
-            .sort((a, b) => {
-              return (priorityOrder[b.name.toLowerCase() as keyof typeof priorityOrder] || 0) - 
-                     (priorityOrder[a.name.toLowerCase() as keyof typeof priorityOrder] || 0);
-            })
-        );
-      } catch {
-        // No analysis yet - show empty charts
-        setCategoryData([]);
-        setPriorityData([]);
-      }
+      // Update charts from session analyses
+      updateChartsFromSession();
       
       setError(null);
     } catch (err) {
@@ -163,7 +215,11 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* All 3 Charts - Always show */}
+      {/* All 3 Charts - Cumulative across all runs */}
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">Analysis Charts (Cumulative)</h2>
+        <p className="text-sm text-gray-600">Showing data from all analysis runs in this session</p>
+      </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Status Distribution */}
         <div className="bg-white overflow-hidden shadow rounded-lg">
@@ -226,10 +282,14 @@ const Dashboard = () => {
                     }}
                   >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
+                    <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} fontSize={10} />
+                    <YAxis fontSize={10} />
                     <Tooltip />
-                    <Bar dataKey="count" fill="#6366F1" />
+                    <Bar dataKey="count" barSize={30} radius={[4, 4, 0, 0]}>
+                      {categoryData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color || '#6366F1'} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -263,14 +323,18 @@ const Dashboard = () => {
                   }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
+                  <XAxis dataKey="name" fontSize={10} />
+                  <YAxis fontSize={10} />
                   <Tooltip />
                   <Bar 
                     dataKey="count" 
-                    fill="#10B981"
-                    radius={[8, 8, 0, 0]}
-                  />
+                    barSize={30}
+                    radius={[4, 4, 0, 0]}
+                  >
+                    {priorityData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color || '#6B7280'} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>

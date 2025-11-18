@@ -1,7 +1,7 @@
 """Seed sample tickets on application startup."""
 
 from sqlalchemy.orm import Session
-from app.models import Ticket
+from app.models import Ticket, AnalysisRun, TicketAnalysis
 from sqlalchemy import func
 
 # 20 Sample tickets with status distribution: Open (10), In Progress (5), Resolved (5)
@@ -135,13 +135,20 @@ SAMPLE_TICKETS = [
 
 
 def seed_database(db: Session):
-    """Seed database with sample tickets if empty."""
+    """Seed database with sample tickets and clear analysis tables."""
     try:
+        # Always clear analysis tables on startup to ensure clean state
+        print("🧹 Clearing analysis tables (analysis_runs and ticket_analysis)...")
+        db.query(TicketAnalysis).delete()
+        db.query(AnalysisRun).delete()
+        db.commit()
+        print("✅ Analysis tables cleared!")
+        
         # Check if tickets already exist
         ticket_count = db.query(func.count(Ticket.id)).scalar()
         
         if ticket_count > 0:
-            print(f"✅ Database already has {ticket_count} tickets. Skipping seed.")
+            print(f"✅ Database already has {ticket_count} tickets. Skipping ticket seed.")
             return
         
         print("🌱 Seeding database with 20 sample tickets...")

@@ -106,39 +106,55 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({
           </div>
 
           {/* Categories Card */}
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-300 rounded-lg p-6 shadow-md">
-            <div className="text-purple-600 text-sm font-semibold uppercase tracking-wide mb-3">Categories</div>
-            <div className="space-y-1">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-6 shadow-md">
+            <div className="text-gray-700 text-sm font-semibold uppercase tracking-wide mb-3">Categories</div>
+            <div className="space-y-2">
               {Object.keys(categories).length > 0 ? (
-                Object.entries(categories).map(([cat, count]) => (
-                  <div key={cat} className="flex justify-between text-sm">
-                    <span className="text-purple-800 capitalize">{cat.replace('_', ' ')}</span>
-                    <span className="font-semibold text-purple-900">{count}</span>
-                  </div>
-                ))
+                Object.entries(categories).map(([cat, count]) => {
+                  const categoryColors: Record<string, { bg: string; text: string; border: string }> = {
+                    bug: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-300' },
+                    'feature request': { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-300' },
+                    billing: { bg: 'bg-purple-50', text: 'text-purple-800', border: 'border-purple-300' },
+                    question: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300' },
+                    support: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-300' }
+                  };
+                  const colors = categoryColors[cat.toLowerCase()] || { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-300' };
+                  return (
+                    <div key={cat} className={`flex justify-between items-center px-3 py-2 rounded border ${colors.bg} ${colors.border}`}>
+                      <span className={`${colors.text} capitalize font-medium`}>{cat.replace('_', ' ')}</span>
+                      <span className={`${colors.text} font-bold`}>{count}</span>
+                    </div>
+                  );
+                })
               ) : (
-                <div className="text-sm text-purple-600">No categories</div>
+                <div className="text-sm text-gray-600">No categories</div>
               )}
             </div>
           </div>
 
           {/* Priority Breakdown Card */}
-          <div className="bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300 rounded-lg p-6 shadow-md">
-            <div className="text-red-600 text-sm font-semibold uppercase tracking-wide mb-3">Priority</div>
-            <div className="space-y-1">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300 rounded-lg p-6 shadow-md">
+            <div className="text-gray-700 text-sm font-semibold uppercase tracking-wide mb-3">Priority</div>
+            <div className="space-y-2">
               {Object.keys(priorities).length > 0 ? (
                 ['high', 'medium', 'low'].map((priority) => {
                   const count = priorities[priority] || 0;
                   if (count === 0) return null;
+                  const priorityColors: Record<string, { bg: string; text: string; border: string }> = {
+                    high: { bg: 'bg-red-50', text: 'text-red-800', border: 'border-red-300' },
+                    medium: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-300' },
+                    low: { bg: 'bg-green-50', text: 'text-green-800', border: 'border-green-300' }
+                  };
+                  const colors = priorityColors[priority] || { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-300' };
                   return (
-                    <div key={priority} className="flex justify-between text-sm">
-                      <span className="text-red-800 capitalize">{priority}</span>
-                      <span className="font-semibold text-red-900">{count}</span>
+                    <div key={priority} className={`flex justify-between items-center px-3 py-2 rounded border ${colors.bg} ${colors.border}`}>
+                      <span className={`${colors.text} capitalize font-medium`}>{priority}</span>
+                      <span className={`${colors.text} font-bold`}>{count}</span>
                     </div>
                   );
                 })
               ) : (
-                <div className="text-sm text-red-600">No priorities</div>
+                <div className="text-sm text-gray-600">No priorities</div>
               )}
             </div>
           </div>
@@ -167,15 +183,27 @@ const AnalysisResults: React.FC<AnalysisResultsProps> = ({
                     <span className="text-xs text-gray-400">Run #{analysis.analysis_run_id}</span>
                   </div>
                   <div className="flex gap-2 flex-wrap">
-                    <span className="inline-block px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">
-                      {analysis.category.replace('_', ' ')}
-                    </span>
+                    {(() => {
+                      const categoryColors: Record<string, string> = {
+                        bug: 'bg-red-100 text-red-800',
+                        'feature request': 'bg-blue-100 text-blue-800',
+                        billing: 'bg-purple-100 text-purple-800',
+                        question: 'bg-amber-100 text-amber-800',
+                        support: 'bg-green-100 text-green-800'
+                      };
+                      const catColor = categoryColors[analysis.category.toLowerCase()] || 'bg-gray-100 text-gray-800';
+                      return (
+                        <span className={`inline-block px-2 py-1 ${catColor} rounded text-xs font-semibold`}>
+                          {analysis.category.replace('_', ' ')}
+                        </span>
+                      );
+                    })()}
                     <span
                       className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
                         analysis.priority === 'high'
                           ? 'bg-red-100 text-red-800'
                           : analysis.priority === 'medium'
-                          ? 'bg-yellow-100 text-yellow-800'
+                          ? 'bg-amber-100 text-amber-800'
                           : 'bg-green-100 text-green-800'
                       }`}
                     >

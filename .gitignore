@@ -51,6 +51,7 @@ Thumbs.db
 # Build outputs
 frontend/build/
 frontend/dist/
+frontend/.vite/
 *.db
 *.sqlite
 

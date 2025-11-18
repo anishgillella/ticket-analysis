@@ -138,15 +138,6 @@ class ApiService {
     return this.request<AnalyzeResponse>(`/api/analysis/runs/${runId}`);
   }
 
-  async getDatabaseView(): Promise<{
-    tickets: any[];
-    analysis_runs: any[];
-    ticket_analyses: any[];
-    counts: { tickets: number; analysis_runs: number; ticket_analyses: number };
-  }> {
-    return this.request(`/api/db/view`);
-  }
-
   async getAnalysisHistory(limit: number = 10, offset: number = 0): Promise<{ analysis_runs: AnalysisRun[] }> {
     return this.request<{ analysis_runs: AnalysisRun[] }>(
       `/api/analysis/runs?limit=${limit}&offset=${offset}`

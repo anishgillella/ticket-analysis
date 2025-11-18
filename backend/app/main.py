@@ -61,13 +61,18 @@ app.include_router(router)
 # Startup event to seed database
 @app.on_event("startup")
 async def startup_event():
-    """Seed database on startup if empty."""
-    db = SessionLocal()
-    try:
-        # Seed tickets if empty
-        seed_database(db)
-    finally:
-        db.close()
+    """Seed database on startup - clears analysis tables and seeds tickets if empty."""
+    # Seed by default, can be disabled by setting SEED_DATABASE=false
+    import os
+    if os.getenv("SEED_DATABASE", "true").lower() != "false":
+        db = SessionLocal()
+        try:
+            # Clears analysis tables and seeds tickets if empty
+            seed_database(db)
+        finally:
+            db.close()
+    else:
+        print("ℹ️  Database seeding is disabled. Set SEED_DATABASE=true (or omit) to enable.")
 
 
 # Health check endpoint for Docker

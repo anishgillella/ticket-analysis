@@ -5,15 +5,25 @@ import { api, TicketAnalysis as TicketAnalysisType, AnalysisRun, Ticket, TicketC
 import AnalysisResults from '../components/AnalysisResults';
 import DatabaseInspector from '../components/DatabaseInspector';
 
+interface SessionAnalysis {
+  analysis_run: AnalysisRun;
+  ticket_analyses: TicketAnalysisType[];
+  sessionRunNumber: number;
+}
+
 const TicketAnalysisPage = () => {
   const [activeTab, setActiveTab] = useState('tickets');
-  const [latestAnalysis, setLatestAnalysis] = useState<{ analysis_run: AnalysisRun; ticket_analyses: TicketAnalysisType[] } | null>(null);
+  const [latestAnalysis, setLatestAnalysis] = useState<SessionAnalysis | null>(null);
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisRun[]>([]);
-  const [selectedHistoryRun, setSelectedHistoryRun] = useState<{ analysis_run: AnalysisRun; ticket_analyses: TicketAnalysisType[] } | null>(null);
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState<SessionAnalysis | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [selectedTickets, setSelectedTickets] = useState<number[]>([]);
+  
+  // Session-based analysis tracking
+  const [sessionAnalyses, setSessionAnalyses] = useState<SessionAnalysis[]>([]);
+  const [sessionRunCounter, setSessionRunCounter] = useState(0);
   
   // Upload form state
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -27,6 +37,23 @@ const TicketAnalysisPage = () => {
   const [editingData, setEditingData] = useState<Partial<Ticket> | null>(null);
 
   useEffect(() => {
+    // Load session analyses from localStorage on mount
+    const stored = localStorage.getItem('sessionAnalyses');
+    const storedCounter = localStorage.getItem('sessionRunCounter');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        setSessionAnalyses(parsed);
+        if (parsed.length > 0) {
+          setLatestAnalysis(parsed[parsed.length - 1]);
+        }
+      } catch (e) {
+        console.error('Failed to parse stored session analyses:', e);
+      }
+    }
+    if (storedCounter) {
+      setSessionRunCounter(parseInt(storedCounter, 10));
+    }
     loadData();
   }, []);
 
@@ -40,11 +67,23 @@ const TicketAnalysisPage = () => {
       setTickets(ticketsData);
       setAnalysisHistory(historyData.analysis_runs);
       
-      // Try to load latest analysis
-      try {
-        const latest = await api.getLatestAnalysis();
-        setLatestAnalysis(latest);
-      } catch {
+      // Always use the most recent session analysis from localStorage
+      const stored = localStorage.getItem('sessionAnalyses');
+      if (stored) {
+        try {
+          const parsed: SessionAnalysis[] = JSON.parse(stored);
+          if (parsed.length > 0) {
+            setLatestAnalysis(parsed[parsed.length - 1]);
+            // Also update sessionAnalyses state to keep them in sync
+            setSessionAnalyses(parsed);
+          } else {
+            setLatestAnalysis(null);
+          }
+        } catch (e) {
+          console.error('Failed to parse stored session analyses:', e);
+          setLatestAnalysis(null);
+        }
+      } else {
         setLatestAnalysis(null);
       }
     } catch (err) {
@@ -54,15 +93,6 @@ const TicketAnalysisPage = () => {
     }
   };
 
-  const loadHistoricalRun = async (runId: number) => {
-    try {
-      const analysis = await api.getAnalysisRun(runId);
-      setSelectedHistoryRun(analysis);
-    } catch (err) {
-      console.error('Failed to load historical run:', err);
-      alert('Failed to load analysis run details');
-    }
-  };
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,8 +162,36 @@ const TicketAnalysisPage = () => {
       setAnalyzing(true);
       const ticketIds = selectedTickets.length > 0 ? selectedTickets : undefined;
       const result = await api.analyzeTickets(ticketIds);
-      setLatestAnalysis(result);
-      await loadData(); // Reload to get updated tickets and history
+      
+      // Increment session run counter and create session analysis
+      const newRunNumber = sessionRunCounter + 1;
+      setSessionRunCounter(newRunNumber);
+      
+      const sessionAnalysis: SessionAnalysis = {
+        ...result,
+        sessionRunNumber: newRunNumber
+      };
+      
+      // Add to session analyses
+      const updatedAnalyses = [...sessionAnalyses, sessionAnalysis];
+      setSessionAnalyses(updatedAnalyses);
+      setLatestAnalysis(sessionAnalysis);
+      
+      // Save to localStorage for Dashboard access
+      localStorage.setItem('sessionAnalyses', JSON.stringify(updatedAnalyses));
+      localStorage.setItem('sessionRunCounter', newRunNumber.toString());
+      
+      // Reload tickets and history (but keep latestAnalysis as the one we just created)
+      try {
+        const [ticketsData, historyData] = await Promise.all([
+          api.getTickets().catch(() => []),
+          api.getAnalysisHistory().catch(() => ({ analysis_runs: [] })),
+        ]);
+        setTickets(ticketsData);
+        setAnalysisHistory(historyData.analysis_runs);
+      } catch (err) {
+        console.error('Failed to reload data:', err);
+      }
       setSelectedTickets([]);
       setActiveTab('results'); // Switch to results tab to show charts
     } catch (err) {
@@ -144,7 +202,7 @@ const TicketAnalysisPage = () => {
     }
   };
 
-  // Prepare data for charts from analyzed tickets
+  // Prepare data for charts from LATEST analysis only (not cumulative)
   const categoryData = latestAnalysis
     ? latestAnalysis.ticket_analyses.reduce((acc, analysis) => {
         const cat = analysis.category.replace('_', ' ');
@@ -153,12 +211,22 @@ const TicketAnalysisPage = () => {
       }, {} as Record<string, number>)
     : {};
 
+  const categoryColors: Record<string, string> = {
+    bug: '#EF4444',              // Red
+    'feature request': '#3B82F6', // Blue
+    billing: '#8B5CF6',            // Purple
+    question: '#F59E0B',           // Amber
+    support: '#10B981',            // Green
+    other: '#6B7280'               // Gray
+  };
+
   const categoryChartData = Object.entries(categoryData).map(([name, count]) => ({
     name,
     count,
+    color: categoryColors[name.toLowerCase()] || '#6B7280'
   }));
 
-  // Priority distribution from analyzed tickets
+  // Priority distribution from LATEST analysis only (not cumulative)
   const priorityData = latestAnalysis
     ? latestAnalysis.ticket_analyses.reduce((acc, analysis) => {
         acc[analysis.priority] = (acc[analysis.priority] || 0) + 1;
@@ -166,19 +234,27 @@ const TicketAnalysisPage = () => {
       }, {} as Record<string, number>)
     : {};
 
+  const priorityColors: Record<string, string> = {
+    high: '#EF4444',    // Red
+    medium: '#F59E0B',  // Amber/Orange
+    low: '#10B981'       // Green
+  };
+
   const priorityChartData = Object.entries(priorityData).map(([name, count]) => ({
     name: name.charAt(0).toUpperCase() + name.slice(1),
     count,
+    color: priorityColors[name.toLowerCase()] || '#6B7280'
   })).sort((a, b) => {
     const order: Record<string, number> = { High: 3, Medium: 2, Low: 1 };
     return (order[b.name] || 0) - (order[a.name] || 0);
   });
 
-  // Status distribution from analyzed tickets
-  // Get status from ticket_analyses by looking up tickets
+  // Status distribution from LATEST analysis only (not cumulative)
   const statusCounts: Record<string, number> = {};
   if (latestAnalysis && tickets.length > 0) {
-    const analyzedTicketIds = new Set(latestAnalysis.ticket_analyses.map(a => a.ticket_id));
+    const analyzedTicketIds = new Set(
+      latestAnalysis.ticket_analyses.map(a => a.ticket_id)
+    );
     const analyzedTickets = tickets.filter(t => analyzedTicketIds.has(t.id));
     
     analyzedTickets.forEach(ticket => {
@@ -609,7 +685,7 @@ const TicketAnalysisPage = () => {
               ) : (
                 <>
                   <AnalysisResults
-                    analysis_run={latestAnalysis.analysis_run}
+                    analysis_run={{ ...latestAnalysis.analysis_run, id: latestAnalysis.sessionRunNumber }}
                     ticket_analyses={latestAnalysis.ticket_analyses}
                     onRefresh={() => {
                       setLatestAnalysis(null);
@@ -617,18 +693,18 @@ const TicketAnalysisPage = () => {
                     }}
                   />
 
-                  {/* Charts Section */}
-                  {latestAnalysis.ticket_analyses.length > 0 && (
+                  {/* Charts Section - All in single row */}
+                  {latestAnalysis && latestAnalysis.ticket_analyses.length > 0 && (
                     <>
                       <div className="pt-6 border-t border-gray-200">
-                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Analysis Charts</h3>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Analysis Charts - Run #{latestAnalysis.sessionRunNumber}</h3>
                       </div>
-                      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         {/* Status Distribution */}
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
-                          <h3 className="text-lg font-medium text-gray-900 mb-4">Status Distribution</h3>
+                          <h3 className="text-sm font-medium text-gray-900 mb-3">Status Distribution</h3>
                           {statusChartData.length > 0 ? (
-                            <div className="h-64">
+                            <div className="h-48">
                               <ResponsiveContainer width="100%" height="100%">
                                 <PieChart>
                                   <Pie
@@ -636,7 +712,7 @@ const TicketAnalysisPage = () => {
                                     cx="50%"
                                     cy="50%"
                                     labelLine={false}
-                                    outerRadius={80}
+                                    outerRadius={60}
                                     fill="#8884d8"
                                     dataKey="value"
                                     label={({ name, percent }) =>
@@ -652,59 +728,66 @@ const TicketAnalysisPage = () => {
                               </ResponsiveContainer>
                             </div>
                           ) : (
-                            <div className="h-64 flex items-center justify-center text-gray-500">
-                              <p className="text-sm">Loading status data...</p>
+                            <div className="h-48 flex items-center justify-center text-gray-500">
+                              <p className="text-xs">No status data</p>
                             </div>
                           )}
                         </div>
 
                         {/* Category Distribution */}
                         <div className="bg-white p-4 rounded-lg border border-gray-200">
-                          <h3 className="text-lg font-medium text-gray-900 mb-4">Category Distribution</h3>
+                          <h3 className="text-sm font-medium text-gray-900 mb-3">Category Distribution</h3>
                           {categoryChartData.length > 0 ? (
-                            <div className="h-64">
+                            <div className="h-48">
                               <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={categoryChartData}>
+                                <BarChart data={categoryChartData} barSize={30}>
                                   <CartesianGrid strokeDasharray="3 3" />
-                                  <XAxis dataKey="name" />
-                                  <YAxis />
+                                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={60} fontSize={10} />
+                                  <YAxis fontSize={10} />
                                   <Tooltip />
-                                  <Bar dataKey="count" fill="#6366F1" />
+                                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                                    {categoryChartData.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={entry.color || '#6B7280'} />
+                                    ))}
+                                  </Bar>
                                 </BarChart>
                               </ResponsiveContainer>
                             </div>
                           ) : (
-                            <div className="h-64 flex items-center justify-center text-gray-500">
-                              <p className="text-sm">No category data</p>
+                            <div className="h-48 flex items-center justify-center text-gray-500">
+                              <p className="text-xs">No category data</p>
                             </div>
                           )}
                         </div>
-                      </div>
 
-                      {/* Priority Distribution */}
-                      <div className="bg-white p-4 rounded-lg border border-gray-200">
-                        <h3 className="text-lg font-medium text-gray-900 mb-4">Priority Distribution</h3>
-                        {priorityChartData.length > 0 ? (
-                          <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                              <BarChart data={priorityChartData}>
-                                <CartesianGrid strokeDasharray="3 3" />
-                                <XAxis dataKey="name" />
-                                <YAxis />
-                                <Tooltip />
-                                <Bar 
-                                  dataKey="count" 
-                                  fill="#10B981"
-                                  radius={[8, 8, 0, 0]}
-                                />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        ) : (
-                          <div className="h-64 flex items-center justify-center text-gray-500">
-                            <p className="text-sm">No priority data</p>
-                          </div>
-                        )}
+                        {/* Priority Distribution */}
+                        <div className="bg-white p-4 rounded-lg border border-gray-200">
+                          <h3 className="text-sm font-medium text-gray-900 mb-3">Priority Distribution</h3>
+                          {priorityChartData.length > 0 ? (
+                            <div className="h-48">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={priorityChartData} barSize={30}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis dataKey="name" fontSize={10} />
+                                  <YAxis fontSize={10} />
+                                  <Tooltip />
+                                  <Bar 
+                                    dataKey="count" 
+                                    radius={[4, 4, 0, 0]}
+                                  >
+                                    {priorityChartData.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={entry.color || '#6B7280'} />
+                                    ))}
+                                  </Bar>
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </div>
+                          ) : (
+                            <div className="h-48 flex items-center justify-center text-gray-500">
+                              <p className="text-xs">No priority data</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
@@ -726,54 +809,54 @@ const TicketAnalysisPage = () => {
                     ← Back to History
                   </button>
                   <AnalysisResults
-                    analysis_run={selectedHistoryRun.analysis_run}
+                    analysis_run={{ ...selectedHistoryRun.analysis_run, id: selectedHistoryRun.sessionRunNumber }}
                     ticket_analyses={selectedHistoryRun.ticket_analyses}
                     onRefresh={() => setSelectedHistoryRun(null)}
                   />
                 </>
-              ) : analysisHistory.length === 0 ? (
+              ) : sessionAnalyses.length === 0 ? (
                 <div className="text-center py-12">
-                  <p className="text-gray-500">No analysis history yet.</p>
+                  <p className="text-gray-500">No analysis history yet. Run an analysis to see history here.</p>
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <h2 className="text-xl font-bold text-gray-900">Analysis History</h2>
-                  {analysisHistory.map((run) => (
+                  <h2 className="text-xl font-bold text-gray-900">Session Analysis History</h2>
+                  {sessionAnalyses.slice().reverse().map((sessionAnalysis) => (
                     <button
-                    key={run.id}
-                      onClick={() => loadHistoricalRun(run.id)}
+                      key={sessionAnalysis.sessionRunNumber}
+                      onClick={() => setSelectedHistoryRun(sessionAnalysis)}
                       className="w-full text-left border border-gray-200 rounded-lg p-4 hover:bg-indigo-50 hover:border-indigo-300 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-semibold text-gray-900">Run #{run.id}</span>
-                          <span
-                            className={`px-2 py-1 rounded text-xs font-semibold ${
-                              run.status === 'completed'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {run.status}
-                          </span>
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-semibold text-gray-900">Run #{sessionAnalysis.sessionRunNumber}</span>
+                            <span
+                              className={`px-2 py-1 rounded text-xs font-semibold ${
+                                sessionAnalysis.analysis_run.status === 'completed'
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}
+                            >
+                              {sessionAnalysis.analysis_run.status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700">{sessionAnalysis.analysis_run.summary}</p>
+                          <div className="flex gap-4 mt-2 text-xs text-gray-500">
+                            <span>{new Date(sessionAnalysis.analysis_run.created_at).toLocaleString()}</span>
+                            {sessionAnalysis.analysis_run.total_tokens_used && (
+                              <span>Tokens: {sessionAnalysis.analysis_run.total_tokens_used.toLocaleString()}</span>
+                            )}
+                            {sessionAnalysis.analysis_run.total_cost && (
+                              <span>Cost: ${sessionAnalysis.analysis_run.total_cost.toFixed(6)}</span>
+                            )}
+                          </div>
                         </div>
-                        <p className="text-sm text-gray-700">{run.summary}</p>
-                        <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                          <span>{new Date(run.created_at).toLocaleString()}</span>
-                          {run.total_tokens_used && (
-                            <span>Tokens: {run.total_tokens_used.toLocaleString()}</span>
-                          )}
-                          {run.total_cost && (
-                            <span>Cost: ${run.total_cost.toFixed(6)}</span>
-                          )}
-                        </div>
-                      </div>
                         <div className="text-indigo-600 ml-4">→</div>
-                    </div>
+                      </div>
                     </button>
                   ))}
-                  </div>
+                </div>
               )}
             </div>
           )}

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15
@@ -33,6 +31,7 @@ services:
       LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
       ENVIRONMENT: production
       DEBUG: "false"
+      SEED_DATABASE: ${SEED_DATABASE:-true}
     depends_on:
       db:
         condition: service_healthy
