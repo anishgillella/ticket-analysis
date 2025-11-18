@@ -572,7 +572,7 @@ frontend/
 - Token/cost analytics per ticket type
 
 **3. Inference Engine Optimization**
-- **Local Inference**: Deploy open-source models (GPT-4O Mini equivalent) via Ollama or vLLM
+- **Local Inference**: Deploy open-source models (GPT-120B OSS Mini equivalent) via Ollama or vLLM
 - **Benefits**: Reduced latency, no API calls, cost savings at scale
 - **Scalability**: For hundreds of thousands of rows:
   - Use **GPT-5 Mini or GPT-5** for Text-to-SQL intelligence
@@ -603,8 +603,6 @@ frontend/
   - Admin dashboard showing embedding quality & search metrics
 
 **5. Additional Features**
-- Full test suite (unit, integration, E2E)
-- Authentication & role-based access
 - Real-time WebSocket updates for live analysis progress
 - CSV batch upload with progress tracking
 - PDF report generation with charts and analysis summaries
